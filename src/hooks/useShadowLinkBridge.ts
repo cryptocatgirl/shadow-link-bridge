@@ -2,8 +2,9 @@ import { useAccount, useWriteContract, useReadContract, useWaitForTransactionRec
 import { parseEther } from 'viem';
 import { contractAddresses } from '@/lib/wallet';
 import { useToast } from '@/hooks/use-toast';
+import { bridgeFHE, fheUtils } from '@/lib/fhe-utils';
 
-// Contract ABI (simplified for demonstration)
+// Contract ABI for Shadow Link Bridge with FHE support
 const CONTRACT_ABI = [
   {
     "inputs": [
@@ -16,6 +17,48 @@ const CONTRACT_ABI = [
     "name": "initiateBridge",
     "outputs": [{"name": "", "type": "uint256"}],
     "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"name": "transactionId", "type": "uint256"},
+      {"name": "verificationAmount", "type": "bytes"},
+      {"name": "inputProof", "type": "bytes"}
+    ],
+    "name": "completeBridge",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"name": "name", "type": "string"},
+      {"name": "rpcUrl", "type": "string"},
+      {"name": "bridgeContract", "type": "address"}
+    ],
+    "name": "addSupportedChain",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"name": "user", "type": "address"},
+      {"name": "isVerified", "type": "bytes"}
+    ],
+    "name": "verifyUser",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"name": "user", "type": "address"},
+      {"name": "reputation", "type": "bytes"}
+    ],
+    "name": "updateUserReputation",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -47,6 +90,19 @@ const CONTRACT_ABI = [
     "type": "function"
   },
   {
+    "inputs": [{"name": "chainId", "type": "uint256"}],
+    "name": "getChainConfig",
+    "outputs": [
+      {"name": "chainIdValue", "type": "uint8"},
+      {"name": "isActive", "type": "bool"},
+      {"name": "name", "type": "string"},
+      {"name": "rpcUrl", "type": "string"},
+      {"name": "bridgeContract", "type": "address"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "getGlobalStats",
     "outputs": [
@@ -54,6 +110,20 @@ const CONTRACT_ABI = [
       {"name": "totalTransactionsValue", "type": "uint8"}
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "withdrawFees",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{"name": "newVerifier", "type": "address"}],
+    "name": "updateVerifier",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   }
 ] as const;
@@ -100,12 +170,13 @@ export function useShadowLinkBridge() {
     });
   };
 
-  // Initiate bridge transaction
+  // Initiate bridge transaction with FHE encryption
   const initiateBridge = async (
     amount: string,
     sourceChainId: string,
     targetChainId: string,
-    encryptedData: string,
+    toAddress: string,
+    stealthMode: boolean = true,
     bridgeFee: string = "0.001" // Default bridge fee in ETH
   ) => {
     if (!address) {
@@ -127,30 +198,37 @@ export function useShadowLinkBridge() {
     }
 
     try {
-      // In a real implementation, you would encrypt the data using FHE
-      // For now, we'll use placeholder encrypted data
-      const encryptedAmount = "0x" + Buffer.from(amount).toString('hex');
-      const encryptedSourceChain = "0x" + Buffer.from(sourceChainId).toString('hex');
-      const encryptedTargetChain = "0x" + Buffer.from(targetChainId).toString('hex');
-      const inputProof = "0x" + Buffer.from("proof").toString('hex');
+      // Encrypt bridge data using FHE
+      const bridgeData = {
+        amount: parseFloat(amount),
+        sourceChainId: parseInt(sourceChainId),
+        targetChainId: parseInt(targetChainId),
+        toAddress,
+        timestamp: Date.now(),
+        stealthMode,
+      };
+
+      const encryptedData = bridgeFHE.encryptBridgeData(bridgeData);
 
       await writeContract({
         address: contractAddresses.sepolia as `0x${string}`,
         abi: CONTRACT_ABI,
         functionName: 'initiateBridge',
         args: [
-          encryptedAmount as `0x${string}`,
-          encryptedSourceChain as `0x${string}`,
-          encryptedTargetChain as `0x${string}`,
-          encryptedData,
-          inputProof as `0x${string}`
+          encryptedData.encryptedAmount as `0x${string}`,
+          encryptedData.encryptedSourceChain as `0x${string}`,
+          encryptedData.encryptedTargetChain as `0x${string}`,
+          encryptedData.encryptedData,
+          encryptedData.inputProof as `0x${string}`
         ],
         value: parseEther(bridgeFee),
       });
 
       toast({
         title: "Bridge Initiated",
-        description: "Your bridge transaction has been submitted",
+        description: stealthMode 
+          ? "Your encrypted bridge transaction has been submitted privately"
+          : "Your bridge transaction has been submitted",
       });
     } catch (err) {
       console.error('Bridge initiation failed:', err);
@@ -174,6 +252,146 @@ export function useShadowLinkBridge() {
     };
   };
 
+  // Complete bridge transaction (verifier only)
+  const completeBridge = async (
+    transactionId: number,
+    verificationAmount: number
+  ) => {
+    if (!address) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const encryptedVerificationAmount = fheUtils.numberToEncryptedBytes(verificationAmount);
+      const inputProof = fheUtils.createProof({ transactionId, verificationAmount });
+
+      await writeContract({
+        address: contractAddresses.sepolia as `0x${string}`,
+        abi: CONTRACT_ABI,
+        functionName: 'completeBridge',
+        args: [
+          BigInt(transactionId),
+          encryptedVerificationAmount,
+          inputProof
+        ],
+      });
+
+      toast({
+        title: "Bridge Completed",
+        description: "Bridge transaction has been completed and verified",
+      });
+    } catch (err) {
+      console.error('Bridge completion failed:', err);
+      toast({
+        title: "Bridge Completion Failed",
+        description: "Failed to complete bridge transaction",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Update user reputation (verifier only)
+  const updateUserReputation = async (
+    userAddress: string,
+    reputation: number
+  ) => {
+    if (!address) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const encryptedReputation = fheUtils.numberToEncryptedBytes(reputation);
+      const inputProof = fheUtils.createProof({ userAddress, reputation });
+
+      await writeContract({
+        address: contractAddresses.sepolia as `0x${string}`,
+        abi: CONTRACT_ABI,
+        functionName: 'updateUserReputation',
+        args: [
+          userAddress as `0x${string}`,
+          encryptedReputation
+        ],
+      });
+
+      toast({
+        title: "Reputation Updated",
+        description: "User reputation has been updated",
+      });
+    } catch (err) {
+      console.error('Reputation update failed:', err);
+      toast({
+        title: "Reputation Update Failed",
+        description: "Failed to update user reputation",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Verify user (verifier only)
+  const verifyUser = async (
+    userAddress: string,
+    isVerified: boolean
+  ) => {
+    if (!address) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const encryptedIsVerified = fheUtils.booleanToEncryptedBytes(isVerified);
+      const inputProof = fheUtils.createProof({ userAddress, isVerified });
+
+      await writeContract({
+        address: contractAddresses.sepolia as `0x${string}`,
+        abi: CONTRACT_ABI,
+        functionName: 'verifyUser',
+        args: [
+          userAddress as `0x${string}`,
+          encryptedIsVerified
+        ],
+      });
+
+      toast({
+        title: "User Verified",
+        description: `User has been ${isVerified ? 'verified' : 'unverified'}`,
+      });
+    } catch (err) {
+      console.error('User verification failed:', err);
+      toast({
+        title: "Verification Failed",
+        description: "Failed to verify user",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Get chain configuration
+  const getChainConfig = (chainId: number) => {
+    return useReadContract({
+      address: contractAddresses.sepolia as `0x${string}`,
+      abi: CONTRACT_ABI,
+      functionName: 'getChainConfig',
+      args: [BigInt(chainId)],
+      query: {
+        enabled: !!contractAddresses.sepolia && chainId >= 0,
+      },
+    });
+  };
+
   return {
     // State
     isPending,
@@ -188,12 +406,17 @@ export function useShadowLinkBridge() {
     
     // Functions
     initiateBridge,
+    completeBridge,
+    updateUserReputation,
+    verifyUser,
     checkTransactionStatus,
+    getChainConfig,
     refetchUserProfile,
     refetchGlobalStats,
     
     // Utils
     isConnected: !!address,
     userAddress: address,
+    fheUtils,
   };
 }

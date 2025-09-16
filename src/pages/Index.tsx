@@ -6,6 +6,7 @@ import { ChainSelector } from "@/components/ChainSelector";
 import { BridgeForm } from "@/components/BridgeForm";
 import { ChainConnection } from "@/components/ChainConnection";
 import { WalletConnect } from "@/components/WalletConnect";
+import { FHEStatus } from "@/components/FHEStatus";
 import { useShadowLinkBridge } from "@/hooks/useShadowLinkBridge";
 import { useToast } from "@/hooks/use-toast";
 
@@ -83,7 +84,7 @@ const Index = () => {
           <div className="flex items-center justify-center gap-8 mb-16">
             <div className="flex items-center gap-3">
               <Shield className="h-6 w-6 text-accent" />
-              <span className="text-foreground">Zero-Knowledge Proofs</span>
+              <span className="text-foreground">FHE Encryption</span>
             </div>
             <div className="w-px h-6 bg-border" />
             <div className="flex items-center gap-3">
@@ -98,6 +99,13 @@ const Index = () => {
       <section className="relative z-10 container mx-auto px-6 pb-16">
         <Card className="max-w-2xl mx-auto stealth-card p-8">
           <div className="space-y-8">
+            {/* FHE Status */}
+            <FHEStatus 
+              isEncrypted={true} 
+              stealthMode={stealthMode} 
+              onToggleStealth={toggleStealthMode}
+            />
+            
             {/* Chain Selection */}
             <div className="space-y-6">
               <h2 className="text-2xl font-semibold text-center">Bridge Assets</h2>

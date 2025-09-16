@@ -30,18 +30,13 @@ export const BridgeForm = ({ stealthMode, sourceChain, targetChain }: BridgeForm
     }
 
     try {
-      // Create encrypted data for the bridge
-      const encryptedData = JSON.stringify({
-        toAddress,
-        timestamp: Date.now(),
-        stealthMode,
-      });
-
+      // Use FHE encryption for bridge transaction
       await initiateBridge(
         amount,
         sourceChain,
         targetChain,
-        encryptedData,
+        toAddress,
+        stealthMode,
         "0.001" // Bridge fee in ETH
       );
     } catch (error) {
