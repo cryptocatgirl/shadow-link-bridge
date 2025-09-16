@@ -2,7 +2,7 @@ import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import { sepolia } from 'wagmi/chains';
 
 // Get projectId from environment variables
-export const projectId = import.meta.env.VITE_WALLET_CONNECT_PROJECT_ID || '2ec9743d0d0cd7fb94dee1a7e6d33475';
+export const projectId = import.meta.env.VITE_WALLET_CONNECT_PROJECT_ID || 'YOUR_WALLET_CONNECT_PROJECT_ID';
 
 // Create wagmi config
 export const config = getDefaultConfig({
@@ -17,7 +17,7 @@ export const supportedChains = [sepolia];
 
 // RPC URLs
 export const rpcUrls = {
-  sepolia: import.meta.env.VITE_RPC_URL || 'https://1rpc.io/sepolia',
+  sepolia: import.meta.env.VITE_RPC_URL || 'YOUR_RPC_URL_HERE',
 };
 
 // Contract addresses (will be set after deployment)
